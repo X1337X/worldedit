@@ -56,6 +56,10 @@ public class EditSession {
      */
     protected LocalWorld world;
     /**
+     * Player.
+     */
+    protected LocalPlayer player;
+    /**
      * Stores the original blocks before modification.
      */
     private DoubleArrayList<BlockVector, BaseBlock> original =
@@ -119,13 +123,14 @@ public class EditSession {
      * @param world
      * @param maxBlocks
      */
-    public EditSession(LocalWorld world, int maxBlocks) {
+    public EditSession(LocalPlayer player, LocalWorld world, int maxBlocks) {
         if (maxBlocks < -1) {
             throw new IllegalArgumentException("Max blocks must be >= -1");
         }
 
         this.maxBlocks = maxBlocks;
         this.world = world;
+        this.player = player;
     }
 
     /**
@@ -136,7 +141,7 @@ public class EditSession {
      * @param blockBag
      * @blockBag
      */
-    public EditSession(LocalWorld world, int maxBlocks, BlockBag blockBag) {
+    public EditSession(LocalPlayer player, LocalWorld world, int maxBlocks, BlockBag blockBag) {
         if (maxBlocks < -1) {
             throw new IllegalArgumentException("Max blocks must be >= -1");
         }
@@ -144,6 +149,7 @@ public class EditSession {
         this.maxBlocks = maxBlocks;
         this.blockBag = blockBag;
         this.world = world;
+        this.player = player;
     }
 
     /**
@@ -249,6 +255,9 @@ public class EditSession {
                 world.copyToWorld(pt, noteBlock);
             }
         }
+        // Fire the block event
+        if (result) 
+            player.fireBlockEvent(pt);
         return result;
     }
 
@@ -266,13 +275,16 @@ public class EditSession {
             throws MaxChangedBlocksException {
         BlockVector blockPt = pt.toBlockVector();
 
-        // if (!original.containsKey(blockPt)) {
+        // Check if it is already changed
+        if (original.containsKey(blockPt)) {
+            return false;
+        }
+        
         original.put(blockPt, getBlock(pt));
 
         if (maxBlocks != -1 && original.size() > maxBlocks) {
             throw new MaxChangedBlocksException(maxBlocks);
         }
-        // }
 
         current.put(pt.toBlockVector(), block);
 
@@ -1875,7 +1887,6 @@ public class EditSession {
                 for (int z = 0; z <= size; ++z) {
                     
                     if ((filled && z <= size && x <= size) || z == size || x == size) {
-                        
                         if (setBlock(pos.add(x, y, z), block)) {
                             ++affected;
                         }
@@ -2379,6 +2390,15 @@ public class EditSession {
      */
     public LocalWorld getWorld() {
         return world;
+    }
+
+    /**
+     * Get the player.
+     * 
+     * @return
+     */
+    public LocalPlayer getPlayer() {
+        return player;
     }
 
     /**
