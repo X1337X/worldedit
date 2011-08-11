@@ -19,31 +19,72 @@
 
 package com.sk89q.worldedit;
 
-import java.util.*;
+import java.io.DataInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.logging.Logger;
-import java.io.*;
-import java.lang.reflect.Method;
 
 import javax.script.ScriptException;
 
-import com.sk89q.minecraft.util.commands.CommandException;
 import com.sk89q.minecraft.util.commands.CommandPermissionsException;
 import com.sk89q.minecraft.util.commands.CommandUsageException;
 import com.sk89q.minecraft.util.commands.CommandsManager;
-import com.sk89q.minecraft.util.commands.Logging;
 import com.sk89q.minecraft.util.commands.MissingNestedCommandException;
 import com.sk89q.minecraft.util.commands.UnhandledCommandException;
 import com.sk89q.minecraft.util.commands.WrappedCommandException;
 import com.sk89q.util.StringUtil;
 import com.sk89q.worldedit.bags.BlockBag;
-import com.sk89q.worldedit.blocks.*;
-import com.sk89q.worldedit.commands.*;
+import com.sk89q.worldedit.blocks.BaseBlock;
+import com.sk89q.worldedit.blocks.BlockType;
+import com.sk89q.worldedit.blocks.ClothColor;
+import com.sk89q.worldedit.blocks.ItemType;
+import com.sk89q.worldedit.blocks.MobSpawnerBlock;
+import com.sk89q.worldedit.blocks.NoteBlock;
+import com.sk89q.worldedit.blocks.SignBlock;
+import com.sk89q.worldedit.commands.ChunkCommands;
+import com.sk89q.worldedit.commands.ClipboardCommands;
+import com.sk89q.worldedit.commands.GeneralCommands;
+import com.sk89q.worldedit.commands.GenerationCommands;
+import com.sk89q.worldedit.commands.HistoryCommands;
+import com.sk89q.worldedit.commands.InsufficientArgumentsException;
+import com.sk89q.worldedit.commands.NavigationCommands;
+import com.sk89q.worldedit.commands.RegionCommands;
+import com.sk89q.worldedit.commands.ScriptingCommands;
+import com.sk89q.worldedit.commands.SelectionCommands;
+import com.sk89q.worldedit.commands.SnapshotUtilCommands;
+import com.sk89q.worldedit.commands.ToolCommands;
+import com.sk89q.worldedit.commands.ToolUtilCommands;
+import com.sk89q.worldedit.commands.UtilityCommands;
+import com.sk89q.worldedit.masks.BlockTypeMask;
+import com.sk89q.worldedit.masks.CombinedMask;
+import com.sk89q.worldedit.masks.ExistingBlockMask;
+import com.sk89q.worldedit.masks.InvertedBlockTypeMask;
+import com.sk89q.worldedit.masks.Mask;
+import com.sk89q.worldedit.masks.RegionMask;
+import com.sk89q.worldedit.masks.UnderOverlayMask;
+import com.sk89q.worldedit.patterns.BlockChance;
+import com.sk89q.worldedit.patterns.ClipboardPattern;
+import com.sk89q.worldedit.patterns.Pattern;
+import com.sk89q.worldedit.patterns.RandomFillPattern;
+import com.sk89q.worldedit.patterns.SingleBlockPattern;
 import com.sk89q.worldedit.regions.RegionSelector;
-import com.sk89q.worldedit.scripting.*;
-import com.sk89q.worldedit.tools.*;
-import com.sk89q.worldedit.masks.*;
-import com.sk89q.worldedit.patterns.*;
-import com.sk89q.worldedit.util.TargetBlock;
+import com.sk89q.worldedit.scripting.CraftScriptContext;
+import com.sk89q.worldedit.scripting.CraftScriptEngine;
+import com.sk89q.worldedit.scripting.RhinoCraftScriptEngine;
+import com.sk89q.worldedit.tools.BlockTool;
+import com.sk89q.worldedit.tools.DoubleActionBlockTool;
+import com.sk89q.worldedit.tools.DoubleActionTraceTool;
+import com.sk89q.worldedit.tools.Tool;
+import com.sk89q.worldedit.tools.TraceTool;
 
 /**
  * This class is the main entry point for WorldEdit. All events are routed
@@ -102,7 +143,7 @@ public class WorldEdit {
      * @param server
      * @param config
      */
-    public WorldEdit(ServerInterface server, final LocalConfiguration config) {
+    public WorldEdit(ServerInterface server, LocalConfiguration config) {
         this.server = server;
         this.config = config;
         
@@ -110,58 +151,6 @@ public class WorldEdit {
             @Override
             public boolean hasPermission(LocalPlayer player, String perm) {
                 return player.hasPermission(perm);
-            }
-            
-            @Override
-            public void invokeMethod(Method parent, String[] args,
-                    LocalPlayer player, Method method, Object instance,
-                    Object[] methodArgs, int level) throws CommandException {
-                if (config.logCommands) {
-                    final Logging loggingAnnotation = method.getAnnotation(Logging.class);
-
-                    final Logging.LogMode logMode;
-                    if (loggingAnnotation == null)
-                        logMode = null;
-                    else
-                        logMode = loggingAnnotation.value();
-
-                    String msg = "WorldEdit: " + player.getName() + ": " + StringUtil.joinString(args, " ");
-                    if (logMode != null) {
-                        Vector position = player.getPosition();
-                        final LocalSession session = getSession(player);
-                        switch (logMode) {
-                        case PLACEMENT:
-                            try {
-                                position = session.getPlacementPosition(player);
-                            } catch (IncompleteRegionException e) {
-                                break;
-                            }
-                            /* FALL-THROUGH */
-
-                        case POSITION:
-                            msg += " - Position: "+position;
-                            break;
-
-                        case ALL:
-                            msg += " - Position: "+position;
-                            /* FALL-THROUGH */
-
-                        case ORIENTATION_REGION:
-                            msg += " - Orientation: "+player.getCardinalDirection().name();
-                            /* FALL-THROUGH */
-
-                        case REGION:
-                            try {
-                                msg += " - Region: "+session.getSelection(player.getWorld());
-                            } catch (IncompleteRegionException e) {
-                                break;
-                            }
-                            break;
-                        }
-                    }
-                    logger.info(msg);
-                }
-                super.invokeMethod(parent, args, player, method, instance, methodArgs, level);
             }
         };
 
@@ -483,8 +472,7 @@ public class WorldEdit {
         
         for (String component : maskString.split(" ")) {
             Mask current = null;
-            
-            if (component.length() == 0) {
+                  if (component.length() == 0) {
                 continue;
             }
             
@@ -495,10 +483,82 @@ public class WorldEdit {
                         || component.equalsIgnoreCase("#region")
                         || component.equalsIgnoreCase("#sel")) {
                     current = new RegionMask(session.getSelection(player.getWorld()));
-                } else {
+                } 
+                else {
                     throw new UnknownItemException(component);
                 }
-            } else {
+            } 
+            else  if (component.charAt(0) == '>') {
+            LocalWorld world = player.getWorld();
+            	Set<Integer> set = new HashSet<Integer>();
+                    String ids = component.replaceAll(">,", "");
+                    if(ids.equalsIgnoreCase("*")){
+                    	current = new UnderOverlayMask(set,true,true);
+                    }
+                    else{
+                    String[] split = ids.split(",");
+                    for(String sid :split){
+                       try{
+                    	   int pid = Integer.parseInt(sid);
+                    	   if(!world.isValidBlockType(pid)){
+                    		   throw new UnknownItemException(sid);
+                    	   }
+                    	   else{
+                    		   set.add(pid);
+                    	   }
+                       }catch(NumberFormatException e){
+                    	   BlockType type = BlockType.lookup(sid);
+                    	   int id = type.getID();
+                    	   if(!world.isValidBlockType(id)){
+                    		   throw new UnknownItemException(sid);
+                    	   }
+                    	   else{
+                    		   set.add(id);
+                       }
+                }
+                    current = new UnderOverlayMask(set, true, false);  
+                }
+                }
+         }
+            else if (component.charAt(0) == '<') {
+                LocalWorld world = player.getWorld();
+                	Set<Integer> set = new HashSet<Integer>();
+                	
+                   
+                        String ids = component.replaceAll("<,", "");
+                        if(ids.equalsIgnoreCase("*")){
+                        	current = new UnderOverlayMask(set,false,true);
+                        }
+                        else{
+                        String[] split = ids.split(",");
+                        for(String sid :split){
+                           try{
+                        	   int pid = Integer.parseInt(sid);
+                        	   if(!world.isValidBlockType(pid)){
+                        		   throw new UnknownItemException(sid);
+                        	   }
+                        	   else{
+                        		   set.add(pid);
+                        	   }
+                           }catch(NumberFormatException e){
+                        	   BlockType type = BlockType.lookup(sid);
+                        	   int id = type.getID();
+                        	   if(!world.isValidBlockType(id)){
+                        		   throw new UnknownItemException(sid);
+                        	   }
+                        	   else{
+                        		   set.add(id);
+                        	   
+                           }
+                            
+                    }
+                        current = new UnderOverlayMask(set, false, false);  
+                    }
+                    }
+             }
+            	
+            	else {
+            
                 if (component.charAt(0) == '!' && component.length() > 1) {
                     current = new InvertedBlockTypeMask(
                             getBlockIDs(player, component.substring(1), true));
@@ -803,13 +863,13 @@ public class WorldEdit {
             dir = player.getCardinalDirection();
         }
 
-        if (dirStr.charAt(0) == 'w' || dir == PlayerDirection.WEST) {
+        if (dirStr.charAt(0) == 'w' || dir == PlayerDirection.EAST) {
             return CuboidClipboard.FlipDirection.WEST_EAST;
         } else if (dirStr.charAt(0) == 'e' || dir == PlayerDirection.EAST) {
             return CuboidClipboard.FlipDirection.WEST_EAST;
         } else if (dirStr.charAt(0) == 's' || dir == PlayerDirection.SOUTH) {
             return CuboidClipboard.FlipDirection.NORTH_SOUTH;
-        } else if (dirStr.charAt(0) == 'n' || dir == PlayerDirection.NORTH) {
+        } else if (dirStr.charAt(0) == 'n' || dir == PlayerDirection.SOUTH) {
             return CuboidClipboard.FlipDirection.NORTH_SOUTH;
         } else if (dirStr.charAt(0) == 'u') {
             return CuboidClipboard.FlipDirection.UP_DOWN;
@@ -947,19 +1007,12 @@ public class WorldEdit {
         if (player.getItemInHand() == config.navigationWand
                 && config.navigationWandMaxDistance > 0
                 && player.hasPermission("worldedit.navigation.jumpto")) {
-            // Bug workaround
-            // Blocks this from being used after the thru function
-            if (!session.canUseJumpto()){
-                session.toggleJumptoBlock();
-                return false;
-            }
-            WorldVector pos = player.getSolidBlockTrace(config.navigationWandMaxDistance);            
+            WorldVector pos = player.getSolidBlockTrace(config.navigationWandMaxDistance);
             if (pos != null) {
                 player.findFreePosition(pos);
             } else {
                 player.printError("No block in sight (or too far)!");
             }
-            return true;
         }
 
         Tool tool = session.getTool(player.getItemInHand());
@@ -988,11 +1041,6 @@ public class WorldEdit {
             if (!player.passThroughForwardWall(40)) {
                 player.printError("Nothing to pass through!");
             }
-            // Bug workaround, so it wont do the Jumpto compass function
-            // Right after this teleport
-            if (session.canUseJumpto())
-                session.toggleJumptoBlock();
-            return true;
         }
         
         Tool tool = session.getTool(player.getItemInHand());
@@ -1132,6 +1180,11 @@ public class WorldEdit {
             long start = System.currentTimeMillis();
 
             try {
+                if (config.logCommands) {
+                    logger.info("WorldEdit: " + player.getName() + ": "
+                            + StringUtil.joinString(split, " "));
+                }
+
                 commands.execute(split, player, this, session, player, editSession);
             } catch (CommandPermissionsException e) {
                 player.printError("You don't have permission to do this.");
@@ -1153,7 +1206,8 @@ public class WorldEdit {
                     int changed = editSession.getBlockChangeCount();
                     if (time > 0) {
                         double throughput = changed / (time / 1000.0);
-                        player.printDebug((time / 1000.0) + "s elapsed (history: "
+                        player.print
+((time / 1000.0) + "s elapsed (history: "
                                 + changed + " changed; "
                                 + Math.round(throughput) + " blocks/sec).");
                     } else {
